@@ -86,6 +86,11 @@ build-aws: $(PREFIX)/test/integration/aws$(call extension,$(GOOS))
 test:
 	$(GO) test -v -race ./...
 
+integration: ./bin/gomplate
+	$(GO) test -v -tags=integration \
+		./test/integration -check.v
+# -ldflags "-X `go list ./test/integration`.GomplateBin=$(shell pwd)/$<" \
+
 build-integration-image: $(PREFIX)/bin/$(PKG_NAME)_linux-amd64$(call extension,$(GOOS)) $(PREFIX)/bin/mirror_linux-amd64$(call extension,$(GOOS)) $(PREFIX)/bin/meta_linux-amd64$(call extension,$(GOOS)) $(PREFIX)/bin/aws_linux-amd64$(call extension,$(GOOS))
 	cp $(PREFIX)/bin/$(PKG_NAME)_linux-amd64 test/integration/gomplate
 	cp $(PREFIX)/bin/mirror_linux-amd64 test/integration/mirror

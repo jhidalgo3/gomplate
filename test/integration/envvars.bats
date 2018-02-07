@@ -37,7 +37,7 @@ load helper
   gomplate -i '{{.Env.HOME}}'
   [ "$status" -eq 0 ]
   [[ "${output}" == "${HOME}" ]]
-}
+} 
 
 @test "existant env var using getenv" {
   gomplate -i '{{getenv "HOME"}}'
