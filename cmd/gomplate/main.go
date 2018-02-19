@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/hairyhenderson/gomplate"
+	"github.com/hairyhenderson/gomplate/data"
 	"github.com/hairyhenderson/gomplate/env"
 	"github.com/hairyhenderson/gomplate/version"
 	"github.com/spf13/cobra"
@@ -72,6 +74,25 @@ func newGomplateCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 	}
 	return rootCmd
+}
+
+func runTemplate(o *GomplateOpts) error {
+	defer runCleanupHooks()
+	d := data.NewData(o.dataSources, o.dataSourceHeaders)
+	addCleanupHook(d.Cleanup)
+
+	g := gomplate.NewGomplate(d, o.lDelim, o.rDelim)
+
+	tmpl, err := gatherTemplates(o)
+	if err != nil {
+		return err
+	}
+	for _, t := range tmpl {
+		if err := g.RunTemplate(t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func initFlags(command *cobra.Command) {

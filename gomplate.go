@@ -1,4 +1,4 @@
-package main
+package gomplate
 
 import (
 	"io"
@@ -38,23 +38,4 @@ func NewGomplate(d *data.Data, leftDelim, rightDelim string) *Gomplate {
 		rightDelim: rightDelim,
 		funcMap:    initFuncs(d),
 	}
-}
-
-func runTemplate(o *GomplateOpts) error {
-	defer runCleanupHooks()
-	d := data.NewData(o.dataSources, o.dataSourceHeaders)
-	addCleanupHook(d.Cleanup)
-
-	g := NewGomplate(d, o.lDelim, o.rDelim)
-
-	tmpl, err := gatherTemplates(o)
-	if err != nil {
-		return err
-	}
-	for _, t := range tmpl {
-		if err := g.RunTemplate(t); err != nil {
-			return err
-		}
-	}
-	return nil
 }
