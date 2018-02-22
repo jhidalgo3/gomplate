@@ -1,5 +1,5 @@
+//+build !integration
 //+build !windows
-//+build integration
 
 package integration
 

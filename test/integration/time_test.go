@@ -1,8 +1,7 @@
+//+build !integration
 //+build !windows
 
 package integration
-
-//xxx+build integration
 
 import (
 	"time"

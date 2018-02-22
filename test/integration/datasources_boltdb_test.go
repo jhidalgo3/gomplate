@@ -1,8 +1,8 @@
+//+build !integration
 //+build !windows
 
 package integration
 
-//xxx+build integration
 import (
 	. "gopkg.in/check.v1"
 

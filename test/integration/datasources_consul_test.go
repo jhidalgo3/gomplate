@@ -5,11 +5,8 @@ package integration
 //xxx+build integration
 import (
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"strconv"
-	"time"
 
 	. "gopkg.in/check.v1"
 
@@ -25,17 +22,17 @@ type ConsulDatasourcesSuite struct {
 
 var _ = Suite(&ConsulDatasourcesSuite{})
 
-const CONSUL_ROOT_TOKEN = "00000000-1111-2222-3333-444455556666"
+const consulRootToken = "00000000-1111-2222-3333-444455556666"
 
 func (s *ConsulDatasourcesSuite) SetUpSuite(c *C) {
 	s.tmpDir = fs.NewDir(c, "gomplate-inttests",
 		fs.WithFile(
 			"consul.json",
-			`{"acl_datacenter": "dc1", "acl_master_token": "`+CONSUL_ROOT_TOKEN+`"}`,
+			`{"acl_datacenter": "dc1", "acl_master_token": "`+consulRootToken+`"}`,
 		),
 	)
-	port, l := freeport()
-	s.consulAddr = l.Addr().String()
+	var port int
+	port, s.consulAddr = freeport()
 	consul := icmd.Command("consul", "agent",
 		"-dev",
 		"-config-file="+s.tmpDir.Join("consul.json"),
@@ -45,47 +42,12 @@ func (s *ConsulDatasourcesSuite) SetUpSuite(c *C) {
 	)
 	s.consulResult = icmd.StartCmd(consul)
 
-	// c.Errorf("Fired up Consul: %v", consul)
+	c.Logf("Fired up Consul: %v", consul)
 
-	err := s.waitForConsul(c)
+	err := waitForURL(c, "http://"+s.consulAddr+"/v1/status/leader")
 	if err != nil {
 		c.Fatal(err)
 	}
-}
-
-func (s *ConsulDatasourcesSuite) waitForConsul(c *C) error {
-	client := http.DefaultClient
-	retries := 10
-	for retries > 0 {
-		retries--
-		resp, err := client.Get("http://" + s.consulAddr + "/v1/status/leader")
-		if err != nil {
-			continue
-		}
-		body, err := ioutil.ReadAll(resp.Body)
-		c.Fatal(body)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode == 200 {
-			return nil
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
-	return nil
-}
-
-func freeport() (port int, l *net.TCPListener) {
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv6loopback})
-	defer l.Close()
-	if err != nil {
-		panic(err)
-	}
-	addr := l.Addr().(*net.TCPAddr)
-	port = addr.Port
-	return port, l
 }
 
 func (s *ConsulDatasourcesSuite) TearDownSuite(c *C) {
@@ -109,10 +71,69 @@ func (s *ConsulDatasourcesSuite) TearDownSuite(c *C) {
 	}
 }
 
+func (s *ConsulDatasourcesSuite) consulPut(c *C, k string, v string) {
+	result := icmd.RunCmd(icmd.Command("consul", "kv", "put", k, v),
+		func(c *icmd.Cmd) {
+			c.Env = []string{"CONSUL_HTTP_ADDR=http://" + s.consulAddr}
+		})
+	result.Assert(c, icmd.Success)
+}
+
+func (s *ConsulDatasourcesSuite) consulDelete(c *C, k string) {
+	result := icmd.RunCmd(icmd.Command("consul", "kv", "delete", k),
+		func(c *icmd.Cmd) {
+			c.Env = []string{"CONSUL_HTTP_ADDR=http://" + s.consulAddr}
+		})
+	result.Assert(c, icmd.Success)
+}
+
 func (s *ConsulDatasourcesSuite) TestConsulDatasource(c *C) {
-	result := icmd.RunCommand(GomplateBin,
+	s.consulPut(c, "foo", "bar")
+	defer s.consulDelete(c, "foo")
+	result := icmd.RunCmd(icmd.Command(GomplateBin,
 		"-d", "consul=consul://",
 		"-i", `{{(ds "consul" "foo")}}`,
-	)
+	), func(c *icmd.Cmd) {
+		c.Env = []string{"CONSUL_HTTP_ADDR=http://" + s.consulAddr}
+	})
+	result.Assert(c, icmd.Expected{ExitCode: 0, Out: "bar"})
+
+	s.consulPut(c, "foo", `{"bar": "baz"}`)
+	result = icmd.RunCmd(icmd.Command(GomplateBin,
+		"-d", "consul=consul://?type=application/json",
+		"-i", `{{(ds "consul" "foo").bar}}`,
+	), func(c *icmd.Cmd) {
+		c.Env = []string{"CONSUL_HTTP_ADDR=http://" + s.consulAddr}
+	})
+	result.Assert(c, icmd.Expected{ExitCode: 0, Out: "baz"})
+
+	s.consulPut(c, "foo", `bar`)
+	result = icmd.RunCmd(icmd.Command(GomplateBin,
+		"-d", "consul=consul://"+s.consulAddr,
+		"-i", `{{(ds "consul" "foo")}}`,
+	))
+	result.Assert(c, icmd.Expected{ExitCode: 0, Out: "bar"})
+
+	s.consulPut(c, "foo", `bar`)
+	result = icmd.RunCmd(icmd.Command(GomplateBin,
+		"-d", "consul=consul+http://"+s.consulAddr,
+		"-i", `{{(ds "consul" "foo")}}`,
+	))
+	result.Assert(c, icmd.Expected{ExitCode: 0, Out: "bar"})
+}
+
+func (s *ConsulDatasourcesSuite) TestConsulWithVaultAuth(c *C) {
+	c.Skip("no vault yet")
+	s.consulPut(c, "foo", "bar")
+	defer s.consulDelete(c, "foo")
+	result := icmd.RunCmd(icmd.Command(GomplateBin,
+		"-d", "consul=consul://",
+		"-i", `{{(ds "consul" "foo")}}`,
+	), func(c *icmd.Cmd) {
+		c.Env = []string{
+			"CONSUL_VAULT_ROLE=readonly",
+			"CONSUL_HTTP_ADDR=http://" + s.consulAddr,
+		}
+	})
 	result.Assert(c, icmd.Expected{ExitCode: 0, Out: "bar"})
 }
